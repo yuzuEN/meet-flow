@@ -619,13 +619,38 @@ export default function MeetFlow() {
                           },
                         ]}
                       />
-                      {/* [MODIFIED] 加入說明文字，提示此處時間以該成員自身時區顯示 */}
-                      <p className="text-xs text-muted-foreground mb-3">
-                        以下時間以 {viewing.name} 的時區（
-                        <span className="font-medium text-foreground">{formatTimezoneOffset(viewing.timezone)}</span>
-                        ）顯示
-                      </p>
-                      <ScheduleGrid availability={viewing.availability} />
+                      {/*
+                        [MODIFIED] 將成員的時段從他們自身時區轉換至「我」的時區後顯示。
+                        轉換流程：成員本地時區 → UTC → 我的本地時區。
+                        使用與共同空閒相同的兩步驟換算（memberAvailabilityToUtc + utcSlotToLocalSlot），
+                        確保跨時區與夏令時間（DST）都能正確處理。
+                        落在週末或 9–17 顯示範圍外的時段會被自動過濾。
+                      */}
+                      {(() => {
+                        // 步驟 1：將 viewing 成員的本地 availability 轉換為 UTC 時段
+                        const viewingUtcSlots = memberAvailabilityToUtc(viewing);
+                        // 步驟 2：將 UTC 時段逐一轉換為「我」的本地時區時段
+                        const viewingInMyTz: TimeSlot[] = viewingUtcSlots.flatMap((s) => {
+                          const [d, h] = s.split("-").map(Number);
+                          const local = utcSlotToLocalSlot(d, h, me.timezone);
+                          // utcSlotToLocalSlot 回傳 null 表示超出顯示範圍（週末或非 9–17），直接捨棄
+                          return local ? [slot(local.day, local.hour)] : [];
+                        });
+
+                        return (
+                          <>
+                            {/* [MODIFIED] 說明文字改為顯示「我的時區」，讓使用者知道時間已換算至自己的時區 */}
+                            <p className="text-xs text-muted-foreground mb-3">
+                              以下時間已換算至你的時區（
+                              <span className="font-medium text-foreground">{formatTimezoneOffset(me.timezone)}</span>
+                              ），{viewing.name} 原始時區為 {formatTimezoneOffset(viewing.timezone)}
+                            </p>
+                            {/* [MODIFIED] 傳入換算後的時段（viewingInMyTz）而非原始的 viewing.availability，
+                                使格線以「我的時區」顯示該成員的空閒時段 */}
+                            <ScheduleGrid availability={viewingInMyTz} />
+                          </>
+                        );
+                      })()}
                     </CardContent>
                   </Card>
                 )}
